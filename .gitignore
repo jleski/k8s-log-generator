@@ -1,1 +1,8 @@
 .vscode
+
+# Binaries build
+loggen
+loggen_linux
+
+# Log
+*.log
