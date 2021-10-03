@@ -38,3 +38,8 @@ deploy:
 	# for this to work you need to have authenticated to a Kubernetes cluster
 	# and set the desired namespace as default for the cluster context
 	kubectl apply -f kubernetes/.
+
+k8s-cleanup:
+	-kubectl delete -f kubernetes/.
+
+redeploy: k8s-cleanup deploy
