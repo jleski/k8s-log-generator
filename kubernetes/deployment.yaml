@@ -1,0 +1,31 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: log-gen
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      name: log-gen
+  template:
+    metadata:
+      labels:
+        app: log-gen
+        name: log-gen
+    spec:
+      volumes:
+        - name: log-data
+          hostPath:
+            path: "/var/log/k8s-log-gen/"
+            type: DirectoryOrCreate
+      containers:
+        - name: application
+          image: jledev.azurecr.io/loggen
+          args: ["-interval", "5", "-logfile", "/data/log/k8s-log-gen_audit.log"]
+          imagePullPolicy: Always
+          volumeMounts:
+            - mountPath: /data/log/
+              name: log-data
+      imagePullSecrets:
+        - name: jledev-azurecr-cred
