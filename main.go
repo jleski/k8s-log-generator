@@ -65,11 +65,16 @@ func log_with_interval(settings *Settings) {
 	logrus.SetFormatter(&logrus.TextFormatter{TimestampFormat: "2006-01-02 15:04:05", FullTimestamp: true})
 	duration := time.Duration(settings.LogInterval * int(time.Second))
 
+	hostname, ok := os.LookupEnv("HOSTNAME")
+	if !ok {
+		hostname = "unset"
+	}
+
 	// Initialize loggers
 	fileOutput := &LogOutput{
 		logger: logrus.New(),
 		fields: &logrus.Fields{
-			"Source":     "internal",
+			"Source":     hostname,
 			"SourceType": "audit",
 			"EventType":  "privilege",
 		},
