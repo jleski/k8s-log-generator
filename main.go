@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
+	"gopkg.in/natefinch/lumberjack.v2"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -12,64 +14,90 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Structure for settings - these can be modified by the user
-type Settings struct {
-	// Interval (seconds) defining how often a mock log entry is created
-	LogInterval int
-
-	// File to log into
-	LogFile string
-}
+type (
+	// Structure for settings - these can be modified by the user
+	Settings struct {
+		// Interval (seconds) defining how often a mock log entry is created
+		LogInterval int
+		// File to log into
+		LogFile string
+	}
+	LogOutput struct {
+		logger    *logrus.Logger
+		fields    *logrus.Fields
+		formatter *logrus.TextFormatter
+	}
+)
 
 // Create a new instance of the logger. You can have any number of instances.
-var stdout_log = logrus.New()
-var file_log = logrus.New()
+//var stdout_log = logrus.Logger{}
+//var file_log = logrus.Logger{}
 
-func log_generic(log *logrus.Logger) {
-	log.SetLevel(logrus.TraceLevel)
-	// The API for setting attributes is a little different than the package level
-	// exported logger. See Godoc.
-	client := &http.Client{}
-
+func getNewRandomJoke() string {
 	req, err := http.NewRequest("GET", "https://icanhazdadjoke.com", nil)
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalln("Error: Unable to prepare HTTP request:", err)
 	}
+	config := &tls.Config{
+		InsecureSkipVerify: true,
+	}
+	tr := &http.Transport{TLSClientConfig: config}
+	client := &http.Client{Transport: tr}
 	req.Header.Set("Accept", "text/plain")
-	resp, _ := client.Do(req)
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatalln(err)
+	resp, reqErr := client.Do(req)
+	if reqErr != nil {
+		log.Fatalln("Error: Unable to send HTTP request:", reqErr)
 	}
-	sb := string(body)
+	body, readErr := ioutil.ReadAll(resp.Body)
+	if readErr != nil {
+		log.Fatalln("Error: Unable to read HTTP response:", readErr)
+	}
+	return string(body)
+}
 
-	log.WithFields(logrus.Fields{
-		"source": "https://icanhazdadjoke.com",
-	}).Info(sb)
+func log_generic(output *LogOutput) {
+	output.logger.SetLevel(logrus.TraceLevel)
+	output.logger.WithFields(*output.fields).Info(getNewRandomJoke())
 }
 
 // Start logging every _interval_ seconds
 func log_with_interval(settings *Settings) {
 	logrus.SetFormatter(&logrus.TextFormatter{TimestampFormat: "2006-01-02 15:04:05", FullTimestamp: true})
-	f, err := os.OpenFile(settings.LogFile, os.O_WRONLY|os.O_CREATE, 0755)
-
-	if err != nil {
-		log.Printf("Could not open file: %s - E: %s, exiting...", settings.LogFile, err.Error())
-		os.Exit(1)
-	}
 	duration := time.Duration(settings.LogInterval * int(time.Second))
 
 	// Initialize loggers
-	file_formatter := &logrus.TextFormatter{TimestampFormat: "2006-01-02 15:04:05", FullTimestamp: true, DisableColors: true}
-	stdout_formatter := &logrus.TextFormatter{TimestampFormat: "2006-01-02 15:04:05", FullTimestamp: true}
-	file_log.SetOutput(f)
-	stdout_log.SetOutput(os.Stdout)
-	file_log.SetFormatter(file_formatter)
-	stdout_log.SetFormatter(stdout_formatter)
+	fileOutput := &LogOutput{
+		logger: logrus.New(),
+		fields: &logrus.Fields{
+			"Source":     "internal",
+			"SourceType": "audit",
+			"EventType":  "privilege",
+		},
+		formatter: &logrus.TextFormatter{TimestampFormat: "2006-01-02 15:04:05", FullTimestamp: true, DisableColors: true},
+	}
+	consoleOutput := &LogOutput{
+		logger: logrus.New(),
+		fields: &logrus.Fields{
+			"Source":     "https://icanhazdadjoke.com",
+			"SourceType": "api",
+			"EventType":  "getNewRandomJoke",
+		},
+		formatter: &logrus.TextFormatter{TimestampFormat: "2006-01-02 15:04:05", FullTimestamp: true},
+	}
+	fileOutput.logger.SetOutput(&lumberjack.Logger{
+		Filename:   settings.LogFile,
+		MaxSize:    3, // megabytes
+		MaxBackups: 1,
+		MaxAge:     7,    //days
+		Compress:   true, // disabled by default
+	})
+	consoleOutput.logger.SetOutput(os.Stdout)
+	fileOutput.logger.SetFormatter(fileOutput.formatter)
+	consoleOutput.logger.SetFormatter(consoleOutput.formatter)
 
 	for range time.Tick(duration) {
-		log_generic(stdout_log)
-		log_generic(file_log)
+		log_generic(consoleOutput)
+		log_generic(fileOutput)
 	}
 }
 
@@ -83,14 +111,14 @@ func start_logging(settings *Settings) {
 }
 
 func get_default_settings() Settings {
-	return Settings{LogInterval: 3, LogFile: "./mocklog.log"}
+	return Settings{LogInterval: 5, LogFile: "./audit-trace.log"}
 }
 
 // Entry
 func main() {
 	settings := get_default_settings()
-	flag.IntVar(&settings.LogInterval, "interval", 5, "Interval defining how often a mock log entry is created")
-	flag.StringVar(&settings.LogFile, "logfile", "./mock_log.log", "Logfile")
+	flag.IntVar(&settings.LogInterval, "interval", settings.LogInterval, "Interval defining how often a mock log entry is created")
+	flag.StringVar(&settings.LogFile, "logfile", settings.LogFile, "Logfile")
 	flag.Parse()
 	//fmt.Printf("Using settings: \n%+v\n", settings)
 	start_logging(&settings)
