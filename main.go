@@ -71,7 +71,8 @@ func log_with_interval(settings *Settings) {
 	}
 
 	// Initialize loggers
-	fileOutput := &LogOutput{
+	// audit log
+	auditOutput := LogOutput{
 		logger: logrus.New(),
 		fields: &logrus.Fields{
 			"Source":     hostname,
@@ -80,29 +81,40 @@ func log_with_interval(settings *Settings) {
 		},
 		formatter: &logrus.TextFormatter{TimestampFormat: "2006-01-02 15:04:05", FullTimestamp: true, DisableColors: true},
 	}
-	consoleOutput := &LogOutput{
+	auditOutput.logger.SetFormatter(auditOutput.formatter)
+	// standard log
+	standardOutput := LogOutput{
 		logger: logrus.New(),
 		fields: &logrus.Fields{
 			"Source":     "https://icanhazdadjoke.com",
 			"SourceType": "api",
 			"EventType":  "getNewRandomJoke",
 		},
-		formatter: &logrus.TextFormatter{TimestampFormat: "2006-01-02 15:04:05", FullTimestamp: true},
+		formatter: &logrus.TextFormatter{TimestampFormat: "2006-01-02 15:04:05", FullTimestamp: true, DisableColors: true},
 	}
-	fileOutput.logger.SetOutput(&lumberjack.Logger{
-		Filename:   settings.LogFile,
-		MaxSize:    3, // megabytes
-		MaxBackups: 1,
-		MaxAge:     7,    //days
-		Compress:   true, // disabled by default
-	})
-	consoleOutput.logger.SetOutput(os.Stdout)
-	fileOutput.logger.SetFormatter(fileOutput.formatter)
-	consoleOutput.logger.SetFormatter(consoleOutput.formatter)
+	standardOutput.logger.SetOutput(os.Stdout)
+	standardOutput.logger.SetFormatter(standardOutput.formatter)
+
+	// Log file was defined, output audit log to file
+	if settings.LogFile != "" {
+		auditOutput.logger.SetOutput(&lumberjack.Logger{
+			Filename:   settings.LogFile,
+			MaxSize:    3, // megabytes
+			MaxBackups: 1,
+			MaxAge:     7,    //days
+			Compress:   true, // disabled by default
+		})
+	} else { // Log file was not defined, output audit log to console
+		auditOutput.logger.SetOutput(os.Stdout)
+	}
+	var outputs []LogOutput
+	outputs = append(outputs, auditOutput)
+	outputs = append(outputs, standardOutput)
 
 	for range time.Tick(duration) {
-		log_generic(consoleOutput)
-		log_generic(fileOutput)
+		for output := range outputs {
+			log_generic(&outputs[output])
+		}
 	}
 }
 
@@ -116,7 +128,7 @@ func start_logging(settings *Settings) {
 }
 
 func get_default_settings() Settings {
-	return Settings{LogInterval: 5, LogFile: "./audit-trace.log"}
+	return Settings{LogInterval: 5, LogFile: ""}
 }
 
 // Entry
