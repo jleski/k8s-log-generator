@@ -78,6 +78,7 @@ func log_with_interval(settings *Settings) {
 			"Source":     hostname,
 			"SourceType": "audit",
 			"EventType":  "privilege",
+			"tags":       []string{"AUDIT"},
 		},
 		formatter: &logrus.TextFormatter{TimestampFormat: "2006-01-02 15:04:05", FullTimestamp: true, DisableColors: true},
 	}
